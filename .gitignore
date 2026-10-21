@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+env/
+ENV/
+
+# Model weights (large binary files)
+models/
+*.bin
+*.pt
+*.pth
+*.onnx
+*.safetensors
+
+# Whisper 模型缓存
+.cache/
+~/.cache/huggingface/
+~/.cache/whisper/
+
+# 音频 / 视频输入文件
+*.m4a
+*.mp3
+*.wav
+*.flac
+*.aac
+*.ogg
+*.mp4
+*.mkv
+*.avi
+*.mov
+
+# 识别输出结果
+txt/
+*.txt
+# 但保留依赖与说明文件
+!requirements.txt
+!README.md
+
+# 日志与临时文件
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# IDE / 编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
