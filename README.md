@@ -19,7 +19,8 @@ whisper-small/
 │       ├── model.bin
 │       ├── tokenizer.json
 │       └── vocabulary.txt
-├── txt/                          # 识别输出目录
+├── txt/                          # 识别输出目录（自动创建）
+├── config.toml                   # 模型路径配置
 ├── test_whisper.py               # CPU 版本
 ├── test_whisper_gpu.py           # GPU（CUDA）版本
 ├── .gitignore
@@ -28,7 +29,7 @@ whisper-small/
 
 ## 环境准备
 
-要求 Python 3.9+。
+要求 Python 3.11+（使用内置 `tomllib` 读取配置）。
 
 ```bash
 python -m venv .venv
@@ -63,15 +64,13 @@ huggingface-cli download Systran/faster-whisper-small --local-dir models/faster-
 
 ## 使用方法
 
-1. 将待识别音频放到项目根目录（示例为 `test.m4a`）。
-2. 修改脚本中的两个路径：
+1. 在 `config.toml` 中设置模型路径（相对路径以脚本所在目录为准）：
 
-```python
-model_path = r"E:\AI\whisper-small\models\faster-whisper-small"
-audio_path = r"E:\AI\whisper-small\test.m4a"
+```toml
+model_path = "models/faster-whisper-small"
 ```
 
-3. 运行：
+2. 运行脚本：
 
 ```bash
 # CPU
@@ -81,16 +80,22 @@ python test_whisper.py
 python test_whisper_gpu.py
 ```
 
-识别结果会打印到终端，同时写入与音频同名的 `.txt` 文件。
+3. 按提示输入音频路径（支持拖拽，自动去掉首尾引号）：
+
+```text
+请输入音频文件路径：E:\audio\meeting.m4a
+```
+
+识别结果会打印到终端，同时写入 `txt/` 目录下与输入文件同名的 `.txt`（如 `meeting.m4a` → `txt/meeting.txt`，UTF-8 BOM 编码）。
 
 ## 主要参数
 
 | 参数 | 说明 |
 | --- | --- |
-| `model_path` | 本地模型目录，或模型名（如 `"small"`） |
+| `model_path` | 本地模型目录（在 `config.toml` 中配置） |
 | `device` | `"cpu"` 或 `"cuda"` |
 | `compute_type` | 计算精度，`"int8"`（省显存/内存）、`"float16"`（GPU 更快）、`"float32"` |
-| `language` | 识别语言，如 `"zh"`、`"en"`；传 `None` 可自动检测 |
+| `language` | 识别语言，固定为 `"zh"` |
 | `beam_size` | 束搜索宽度，越大越准但越慢 |
 | `vad_filter` | 是否启用语音活动检测过滤静音 |
 | `local_files_only` | 仅使用本地文件，禁止联网下载 |
@@ -100,7 +105,7 @@ python test_whisper_gpu.py
 - **`模型加载成功` 后长时间无输出**：首次运行需初始化计算图，属正常现象；若音频较长请耐心等待。
 - **GPU 报 DLL 缺失**：CUDA / cuDNN 版本不匹配，建议改用 CPU 版本，或安装匹配版本的 NVIDIA pip 包。
 - **中文识别乱码**：输出文件已使用 `utf-8-sig` 编码，如需在其他程序中使用可改为 `utf-8`。
-- **识别结果不理想**：可尝试增大 `beam_size`、明确指定 `language`，或换用更大的模型（`medium`、`large-v3`）。
+- **识别结果不理想**：可尝试增大 `beam_size`，或换用更大的模型（`medium`、`large-v3`）。
 
 ## 说明
 

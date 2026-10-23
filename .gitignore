@@ -14,6 +14,8 @@ venv/
 env/
 ENV/
 
+input/
+
 # Model weights (large binary files)
 models/
 *.bin

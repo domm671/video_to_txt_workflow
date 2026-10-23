@@ -1,0 +1,2 @@
+# 本地模型目录（相对路径以脚本所在目录为准）
+model_path = "models/faster-whisper-small"
