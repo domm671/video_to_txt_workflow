@@ -1,6 +1,37 @@
 # Whisper Small 本地语音识别
 
-使用 [faster-whisper](https://github.com/SYSTRAN/faster-whisper) 加载本地 **Whisper Small** 模型，对音频进行离线语音转文字（默认中文）。支持 CPU 与 CUDA（GPU）两种运行方式，无需联网、无需调用云端 API。
+使用 [faster-whisper](https://github.com/SYSTRAN/faster-whisper) 加载本地 **Whisper Small** 模型，对音频进行离线语音转文字（默认中文）。音频转录支持 CPU 与 CUDA（GPU）。视频工作流可将转录文本交给指定的大模型 API 勘误和分析。
+
+## 视频工作流
+
+在项目目录下使用 Python 3.11+。如果目录下还没有 `api_config.toml`，先将 `api_config.example.toml` 复制为 `api_config.toml`。按服务商文档填写 `base_url`、`model` 和 `api_key`。所选服务需支持 `POST /chat/completions`，基础地址保留服务所需的版本路径（如 `/v1`）。存放真实密钥的 `api_config.toml` 已加入 `.gitignore`。
+
+保存配置后，在 PowerShell 中运行。
+
+```powershell
+python .\workflow.py 'E:\视频\示例.mp4'
+```
+
+1. 检查并安装缺失的 `faster-whisper` 和 `OpenCC`。如果当前运行在虚拟环境内，则使用该环境，否则使用项目 `.venv`，缺失时自动创建。FFmpeg 缺失时，Windows 使用 [WinGet](https://learn.microsoft.com/windows/package-manager/winget/install) 安装 `Gyan.FFmpeg`。没有 WinGet 的环境需要先安装 FFmpeg 并加入 `PATH`。
+2. 提取第一条音轨到临时 WAV 文件，转换为单声道、16 kHz PCM。
+3. 调用 `transcribe.py`，以 `config.toml` 指定的本地模型优先用 GPU 转录。GPU 转录失败时在独立进程中用 CPU 完整重跑。
+4. 一次请求发送完整转录。模型先校订全文、连接断句，再基于校订稿分析论证链、思维模型、证据与边界。终端显示请求耗时。
+
+每次运行在 `txt/<视频名称>-<随机后缀>/` 下生成 `原始转录.txt`、`勘误后.txt` 和 `思维分析.md`。API 请求失败或返回不完整时保留原始转录。音频提取和 Whisper 转录在本地完成，勘误和分析会将文本发往配置的 API。模型须有足够的上下文和输出额度来处理全文并生成两个结果。若响应达到输出上限，可按服务商文档在 `api_config.toml` 中选填 `max_completion_tokens` 或 `max_tokens`。
+
+### 火山方舟 Agent Plan
+
+使用和 Pi 相同的 [Agent Plan 专属 API Key](https://docs.volcengine.com/docs/ark/agent-plan-personal-pi?lang=zh)，在 `api_config.toml` 中填入以下参数。`stream` 开启后仍然只发一次请求，终端会随正文到达显示接收进度。`max_completion_tokens` 对应 Pi 配置里的 `maxTokens`，表示上限，生成提前结束时按实际输出计量。
+
+```toml
+base_url = "https://ark.cn-beijing.volces.com/api/plan/v3"
+model = "deepseek-v4.1-flash"
+api_key = "<Agent Plan 专属 API Key>"
+stream = true
+max_completion_tokens = 393216
+```
+
+其他 OpenAI 兼容服务可按支持情况设置 `stream = true`，省略 `stream` 时按整包 JSON 响应读取。
 
 ## 功能特点
 
@@ -21,8 +52,12 @@ whisper-small/
 │       └── vocabulary.txt
 ├── txt/                          # 识别输出目录（自动创建）
 ├── config.toml                   # 模型路径配置
+├── api_config.example.toml       # 大模型 API 配置模板
+├── api_config.toml               # 本机大模型 API 配置（不提交）
 ├── test_whisper.py               # CPU 版本
 ├── test_whisper_gpu.py           # GPU（CUDA）版本
+├── transcribe.py                 # 视频工作流的转录入口
+├── workflow.py                   # 视频转录、勘误和分析入口
 ├── .gitignore
 └── README.md
 ```
@@ -40,7 +75,7 @@ python -m venv .venv
 # Linux / macOS
 source .venv/bin/activate
 
-pip install faster-whisper
+pip install faster-whisper OpenCC
 ```
 
 GPU 版本还需要安装与 CUDA 版本匹配的 PyTorch / cuBLAS / cuDNN 运行库；若缺少依赖，faster-whisper 会提示对应的 `.dll` 缺失，请按提示安装对应版本的 `nvidia-cublas-cu12`、`nvidia-cudnn-cu12` 等包。

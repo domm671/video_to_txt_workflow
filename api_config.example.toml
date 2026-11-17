@@ -1,0 +1,12 @@
+# 复制为 api_config.toml 后填写服务商提供的信息。
+# base_url 保留版本路径（如 /v1），去掉末尾 /chat/completions。
+base_url = ""
+model = ""
+api_key = ""
+
+# 兼容 OpenAI Chat Completions 流式接口的服务可启用。
+# stream = true
+
+# 响应被截断时，按服务商文档选填一个输出上限字段。
+# max_completion_tokens = 12000
+# max_tokens = 12000

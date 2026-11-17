@@ -16,6 +16,9 @@ ENV/
 
 input/
 
+# 本机大模型 API 密钥
+/api_config.toml
+
 # Model weights (large binary files)
 models/
 *.bin
