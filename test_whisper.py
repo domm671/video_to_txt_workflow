@@ -2,6 +2,9 @@ import tomllib
 from pathlib import Path
 
 from faster_whisper import WhisperModel
+from opencc import OpenCC
+
+cc = OpenCC('t2s')  # 繁体转简体
 
 base_dir = Path(__file__).resolve().parent
 
@@ -42,6 +45,7 @@ with output_path.open("w", encoding="utf-8-sig") as f:
     for segment in segments:
         text = segment.text.strip()
         if text:
+            text = cc.convert(text)  # 繁体中文转换为简体中文
             print(text)
             f.write(text + "\n")
 
