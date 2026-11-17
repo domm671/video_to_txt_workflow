@@ -1,27 +1,47 @@
-# Whisper Small 本地语音识别
+# Whisper Small 视频转录与分析
 
-使用 [faster-whisper](https://github.com/SYSTRAN/faster-whisper) 加载本地 **Whisper Small** 模型，对音频进行离线语音转文字（默认中文）。音频转录支持 CPU 与 CUDA（GPU）。视频工作流可将转录文本交给指定的大模型 API 勘误和分析。
+将中文视频转成可阅读的校订稿和思维分析。FFmpeg 提取音轨后，faster-whisper 使用本地 Whisper Small 模型转录，优先使用 NVIDIA GPU，失败时自动切换到 CPU。大模型收到一次完整转录，先勘误并连接断句，再基于校订稿分析论证结构和思维模型。
 
-## 视频工作流
+音频提取和语音转录在本机运行。勘误和分析会把转录文本发送给你配置的 API 服务。已有音频也可以通过 [本地音频转录](#本地音频转录) 直接生成 TXT。
 
-在项目目录下使用 Python 3.11+。如果目录下还没有 `api_config.toml`，先将 `api_config.example.toml` 复制为 `api_config.toml`。按服务商文档填写 `base_url`、`model` 和 `api_key`。所选服务需支持 `POST /chat/completions`，基础地址保留服务所需的版本路径（如 `/v1`）。存放真实密钥的 `api_config.toml` 已加入 `.gitignore`。
+## 快速开始
 
-保存配置后，在 PowerShell 中运行。
+以下命令适用于 Windows PowerShell。克隆仓库后，在项目根目录运行。需要 Python 3.11 或更高版本。
+
+### 1. 准备 Whisper Small 模型
+
+创建虚拟环境并下载 CTranslate2 格式的模型。已有模型时，只需创建虚拟环境并在 `config.toml` 中设置 `model_path`，相对路径以项目根目录为准。 [模型文件](https://huggingface.co/Systran/faster-whisper-small) · [Hugging Face CLI 文档](https://huggingface.co/docs/huggingface_hub/en/guides/cli#download-to-a-local-folder)
 
 ```powershell
-python .\workflow.py 'E:\视频\示例.mp4'
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install huggingface_hub
+.\.venv\Scripts\hf.exe download Systran/faster-whisper-small --local-dir models/faster-whisper-small
 ```
 
-1. 检查并安装缺失的 `faster-whisper` 和 `OpenCC`。如果当前运行在虚拟环境内，则使用该环境，否则使用项目 `.venv`，缺失时自动创建。FFmpeg 缺失时，Windows 使用 [WinGet](https://learn.microsoft.com/windows/package-manager/winget/install) 安装 `Gyan.FFmpeg`。没有 WinGet 的环境需要先安装 FFmpeg 并加入 `PATH`。
-2. 提取第一条音轨到临时 WAV 文件，转换为单声道、16 kHz PCM。
-3. 调用 `transcribe.py`，以 `config.toml` 指定的本地模型优先用 GPU 转录。GPU 转录失败时在独立进程中用 CPU 完整重跑。
-4. 一次请求发送完整转录。模型先校订全文、连接断句，再基于校订稿分析论证链、思维模型、证据与边界。终端显示请求耗时。
+### 2. 配置大模型 API
 
-每次运行在 `txt/<视频名称>-<随机后缀>/` 下生成 `原始转录.txt`、`勘误后.txt` 和 `思维分析.md`。API 请求失败或返回不完整时保留原始转录。音频提取和 Whisper 转录在本地完成，勘误和分析会将文本发往配置的 API。模型须有足够的上下文和输出额度来处理全文并生成两个结果。若响应达到输出上限，可按服务商文档在 `api_config.toml` 中选填 `max_completion_tokens` 或 `max_tokens`。
+首次使用时复制配置模板，再编辑 `api_config.toml`。
 
-### 火山方舟 Agent Plan
+```powershell
+if (-not (Test-Path .\api_config.toml)) {
+    Copy-Item .\api_config.example.toml .\api_config.toml
+}
+```
 
-使用和 Pi 相同的 [Agent Plan 专属 API Key](https://docs.volcengine.com/docs/ark/agent-plan-personal-pi?lang=zh)，在 `api_config.toml` 中填入以下参数。`stream` 开启后仍然只发一次请求，终端会随正文到达显示接收进度。`max_completion_tokens` 对应 Pi 配置里的 `maxTokens`，表示上限，生成提前结束时按实际输出计量。
+| 字段 | 填写方式 |
+| --- | --- |
+| `base_url` | 服务商提供的 OpenAI Chat Completions 基础地址，保留版本路径并去掉末尾的 `/chat/completions` |
+| `model` | 服务商提供的模型 ID |
+| `api_key` | 服务商签发的 API Key |
+| `stream` | 可选，设置为 `true` 时随正文到达显示接收进度 |
+| `max_completion_tokens` 或 `max_tokens` | 可选，按服务商支持情况选填其中一个，用于设置输出上限 |
+
+真实密钥保存在本机的 `api_config.toml`，该文件已由 `.gitignore` 排除。提交到 GitHub 的配置模板使用空值。 [配置模板](api_config.example.toml)
+
+<details>
+<summary>火山方舟 Agent Plan 示例</summary>
+
+使用 Agent Plan 专属 API Key。如果你已在 Pi 中使用同一套餐，可沿用对应的基础地址、模型 ID 和专属密钥。示例的输出上限与该模型在 Pi 中的配置一致。 [火山方舟配置文档](https://docs.volcengine.com/docs/ark/agent-plan-personal-pi?lang=zh)
 
 ```toml
 base_url = "https://ark.cn-beijing.volces.com/api/plan/v3"
@@ -31,117 +51,64 @@ stream = true
 max_completion_tokens = 393216
 ```
 
-其他 OpenAI 兼容服务可按支持情况设置 `stream = true`，省略 `stream` 时按整包 JSON 响应读取。
+</details>
 
-## 功能特点
+### 3. 转录视频
 
-- **完全离线**：模型与识别过程均在本地完成，`local_files_only=True`
-- **CPU / GPU 双版本**：`int8` 量化，CPU 可跑，GPU 更快
-- **VAD 过滤**：自动跳过静音片段，减少空转与幻听
-- **逐段输出**：识别结果按句打印，并保存为同名 `.txt` 文件（UTF-8 BOM，Windows 记事本可直接打开）
+将示例路径换成要处理的视频文件。
 
-## 目录结构
-
-```
-whisper-small/
-├── models/
-│   └── faster-whisper-small/     # 本地模型（需自行下载，未纳入版本控制）
-│       ├── config.json
-│       ├── model.bin
-│       ├── tokenizer.json
-│       └── vocabulary.txt
-├── txt/                          # 识别输出目录（自动创建）
-├── config.toml                   # 模型路径配置
-├── api_config.example.toml       # 大模型 API 配置模板
-├── api_config.toml               # 本机大模型 API 配置（不提交）
-├── test_whisper.py               # CPU 版本
-├── test_whisper_gpu.py           # GPU（CUDA）版本
-├── transcribe.py                 # 视频工作流的转录入口
-├── workflow.py                   # 视频转录、勘误和分析入口
-├── .gitignore
-└── README.md
+```powershell
+.\.venv\Scripts\python.exe .\workflow.py 'E:\视频\示例.mp4'
 ```
 
-## 环境准备
+工作流会检查 `faster-whisper` 和 `OpenCC`，并安装缺失的 Python 依赖。Windows 上缺少 FFmpeg 时会尝试通过 WinGet 安装。使用其他系统或没有 WinGet 时，请先安装 FFmpeg 并将其加入 `PATH`。 [FFmpeg 下载](https://ffmpeg.org/download.html) · [WinGet 文档](https://learn.microsoft.com/windows/package-manager/winget/install)
 
-要求 Python 3.11+（使用内置 `tomllib` 读取配置）。
+每次运行在 `txt/<视频名>-<随机后缀>/` 下保存三个文件。
 
-```bash
-python -m venv .venv
-
-# Windows
-.venv\Scripts\activate
-
-# Linux / macOS
-source .venv/bin/activate
-
-pip install faster-whisper OpenCC
-```
-
-GPU 版本还需要安装与 CUDA 版本匹配的 PyTorch / cuBLAS / cuDNN 运行库；若缺少依赖，faster-whisper 会提示对应的 `.dll` 缺失，请按提示安装对应版本的 `nvidia-cublas-cu12`、`nvidia-cudnn-cu12` 等包。
-
-## 模型下载
-
-项目默认从本地目录读取模型：
-
-```
-models/faster-whisper-small
-```
-
-可使用 Hugging Face CLI 下载（CTranslate2 格式）：
-
-```bash
-pip install huggingface_hub
-huggingface-cli download Systran/faster-whisper-small --local-dir models/faster-whisper-small
-```
-
-也可以直接使用 `WhisperModel("small")`，让 faster-whisper 自动下载到缓存目录。
-
-## 使用方法
-
-1. 在 `config.toml` 中设置模型路径（相对路径以脚本所在目录为准）：
-
-```toml
-model_path = "models/faster-whisper-small"
-```
-
-2. 运行脚本：
-
-```bash
-# CPU
-python test_whisper.py
-
-# GPU
-python test_whisper_gpu.py
-```
-
-3. 按提示输入音频路径（支持拖拽，自动去掉首尾引号）：
-
-```text
-请输入音频文件路径：E:\audio\meeting.m4a
-```
-
-识别结果会打印到终端，同时写入 `txt/` 目录下与输入文件同名的 `.txt`（如 `meeting.m4a` → `txt/meeting.txt`，UTF-8 BOM 编码）。
-
-## 主要参数
-
-| 参数 | 说明 |
+| 文件 | 内容 |
 | --- | --- |
-| `model_path` | 本地模型目录（在 `config.toml` 中配置） |
-| `device` | `"cpu"` 或 `"cuda"` |
-| `compute_type` | 计算精度，`"int8"`（省显存/内存）、`"float16"`（GPU 更快）、`"float32"` |
-| `language` | 识别语言，固定为 `"zh"` |
-| `beam_size` | 束搜索宽度，越大越准但越慢 |
-| `vad_filter` | 是否启用语音活动检测过滤静音 |
-| `local_files_only` | 仅使用本地文件，禁止联网下载 |
+| `原始转录.txt` | 从视频第一条音轨得到的 Whisper 转录 |
+| `勘误后.txt` | 大模型校订后的全文，包括错字修正、断句连接和语义分段 |
+| `思维分析.md` | 基于校订稿整理的核心结论、论证链、思维模型、证据及适用边界 |
 
-## 可能遇到的问题
+API 请求结束后，终端会显示模型请求耗时。请求失败或响应不完整时，工作流会保留原始转录。
 
-- **`模型加载成功` 后长时间无输出**：首次运行需初始化计算图，属正常现象；若音频较长请耐心等待。
-- **GPU 报 DLL 缺失**：CUDA / cuDNN 版本不匹配，建议改用 CPU 版本，或安装匹配版本的 NVIDIA pip 包。
-- **中文识别乱码**：输出文件已使用 `utf-8-sig` 编码，如需在其他程序中使用可改为 `utf-8`。
-- **识别结果不理想**：可尝试增大 `beam_size`，或换用更大的模型（`medium`、`large-v3`）。
+## 本地音频转录
 
-## 说明
+这两个交互式入口可以直接读取音频文件。按提示输入音频路径，输出写入 `txt/<音频名>.txt`，编码为 UTF-8 BOM。转录使用中文识别、静音过滤和繁体转简体。
 
-`models/`、`.venv/`、音频文件与识别结果均已在 `.gitignore` 中忽略，不会提交到仓库。
+```powershell
+.\.venv\Scripts\python.exe -m pip install faster-whisper OpenCC
+
+# CPU
+.\.venv\Scripts\python.exe .\test_whisper.py
+
+# NVIDIA CUDA
+.\.venv\Scripts\python.exe .\test_whisper_gpu.py
+```
+
+## 常见问题
+
+- **GPU 加载失败**。检查 NVIDIA 驱动、cuBLAS 和 cuDNN 是否与已安装的 CTranslate2 版本匹配。视频工作流会自动回退到 CPU。 [faster-whisper GPU 环境说明](https://github.com/SYSTRAN/faster-whisper#gpu)
+- **找不到模型**。检查 `config.toml` 的 `model_path`，确认目标目录下有 `model.bin`、`config.json` 和 `tokenizer.json`。
+- **模型返回不完整**。一次调用需要容纳完整转录和两份输出。检查所用模型的上下文窗口和服务商支持的输出上限配置。
+- **FFmpeg 提取失败**。确认 `ffmpeg -version` 能运行，且视频文件包含音轨。
+
+## 项目文件
+
+| 文件 | 用途 |
+| --- | --- |
+| `workflow.py` | 视频工作流入口，负责提取音轨、设备回退和 API 调用 |
+| `transcribe.py` | 视频工作流使用的本地转录脚本 |
+| `test_whisper.py`、`test_whisper_gpu.py` | CPU 和 CUDA 音频转录入口 |
+| `config.toml` | 本地 Whisper 模型路径 |
+| `api_config.example.toml` | 大模型 API 配置模板 |
+| `test_workflow.py` | API 配置、流式响应和输出校验的单元测试 |
+
+运行工作流测试。
+
+```powershell
+python -m unittest -v test_workflow
+```
+
+模型权重、虚拟环境、`input/` 素材和 `txt/` 输出均保留在本机。 [Git 忽略规则](.gitignore)
