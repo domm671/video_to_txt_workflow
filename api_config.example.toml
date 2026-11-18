@@ -7,6 +7,9 @@ api_key = ""
 # 兼容 OpenAI Chat Completions 流式接口的服务可启用。
 # stream = true
 
+# 可选的推理强度，取值以所选 API 和模型的文档为准，省略时沿用服务端默认值。
+# reasoning_effort = "high"
+
 # 响应被截断时，按服务商文档选填一个输出上限字段。
 # max_completion_tokens = 12000
 # max_tokens = 12000

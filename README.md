@@ -34,6 +34,7 @@ if (-not (Test-Path .\api_config.toml)) {
 | `model` | 服务商提供的模型 ID |
 | `api_key` | 服务商签发的 API Key |
 | `stream` | 可选，设置为 `true` 时随正文到达显示接收进度 |
+| `reasoning_effort` | 可选，推理强度，按所选 API 和模型支持的取值填写，省略时沿用服务端默认值 |
 | `max_completion_tokens` 或 `max_tokens` | 可选，按服务商支持情况选填其中一个，用于设置输出上限 |
 
 真实密钥保存在本机的 `api_config.toml`，该文件已由 `.gitignore` 排除。提交到 GitHub 的配置模板使用空值。 [配置模板](api_config.example.toml)
@@ -63,13 +64,13 @@ max_completion_tokens = 393216
 
 工作流会检查 `faster-whisper` 和 `OpenCC`，并安装缺失的 Python 依赖。Windows 上缺少 FFmpeg 时会尝试通过 WinGet 安装。使用其他系统或没有 WinGet 时，请先安装 FFmpeg 并将其加入 `PATH`。 [FFmpeg 下载](https://ffmpeg.org/download.html) · [WinGet 文档](https://learn.microsoft.com/windows/package-manager/winget/install)
 
-每次运行在 `txt/<视频名>-<随机后缀>/` 下保存三个文件。
+每次运行在 `txt/<视频名>-<随机后缀>/` 下保存三个文件。文件名中的 `<视频名>` 为原视频去掉扩展名后的完整名称，例如 `示例.mp4` 对应 `示例_勘误后.txt`。
 
 | 文件 | 内容 |
 | --- | --- |
-| `原始转录.txt` | 从视频第一条音轨得到的 Whisper 转录 |
-| `勘误后.txt` | 大模型校订后的全文，包括错字修正、断句连接和语义分段 |
-| `思维分析.md` | 基于校订稿整理的核心结论、论证链、思维模型、证据及适用边界 |
+| `<视频名>_原始转录.txt` | 从视频第一条音轨得到的 Whisper 转录 |
+| `<视频名>_勘误后.txt` | 大模型校订后的全文，包括错字修正、断句连接和语义分段 |
+| `<视频名>_思维分析.md` | 从文章中提取的思维结构和思维模型，由模型根据文章内容自行组织 |
 
 API 请求结束后，终端会显示模型请求耗时。请求失败或响应不完整时，工作流会保留原始转录。
 

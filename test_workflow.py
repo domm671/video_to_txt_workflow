@@ -2,10 +2,11 @@ import io
 import json
 import unittest
 from pathlib import Path
+from subprocess import CompletedProcess
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from workflow import ANALYSIS_MARKER, CORRECTED_MARKER, api_settings, complete
+from workflow import ANALYSIS_MARKER, CORRECTED_MARKER, api_settings, complete, run
 
 
 class WorkflowTests(unittest.TestCase):
@@ -34,7 +35,7 @@ class WorkflowTests(unittest.TestCase):
             path.write_text(
                 'base_url = "https://ark.cn-beijing.volces.com/api/plan/v3"\n'
                 'model = "deepseek-v4.1-flash"\napi_key = "test-key"\n'
-                'stream = true\nmax_completion_tokens = 393216\n',
+                'stream = true\nmax_completion_tokens = 393216\nreasoning_effort = "low"\n',
                 encoding="utf-8",
             )
             settings = api_settings(path)
@@ -59,7 +60,20 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(payload["max_completion_tokens"], 393216)
         self.assertTrue(payload["stream"])
         self.assertEqual(payload["stream_options"], {"include_usage": True})
+        self.assertEqual(payload["reasoning_effort"], "low")
         self.assertNotIn("max_tokens", payload)
+
+    def test_api_settings_rejects_invalid_reasoning_effort(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "api_config.toml"
+            for value in ('""', '"   "', "1", "true"):
+                with self.subTest(value=value):
+                    path.write_text(
+                        'base_url = "https://example.com/v1"\nmodel = "test-model"\napi_key = "test-key"\n'
+                        f'reasoning_effort = {value}\n', encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(ValueError, "reasoning_effort"):
+                        api_settings(path)
 
     @patch("workflow.urlopen")
     def test_interrupted_stream_is_rejected(self, urlopen):
@@ -72,7 +86,7 @@ class WorkflowTests(unittest.TestCase):
     def test_full_transcript_and_both_outputs_use_one_request(self, urlopen):
         transcript = "这是连续的原始段落。\n" * 600
         corrected = "这是一段校订后的正文。"
-        analysis = "# 思维结构与思维模型分析\n\n这是分析正文。"
+        analysis = "作者围绕实际问题展开思考。\n\n- 先比较，再验证。"
         content = f"{CORRECTED_MARKER}\r\n{corrected}\r\n{ANALYSIS_MARKER}\r\n{analysis}"
         response = {"choices": [{"finish_reason": "stop", "message": {"content": content}}]}
         urlopen.return_value = io.BytesIO(json.dumps(response).encode("utf-8"))
@@ -83,6 +97,33 @@ class WorkflowTests(unittest.TestCase):
         payload = json.loads(urlopen.call_args.args[0].data)
         self.assertEqual(payload["messages"][1]["content"], transcript)
         self.assertEqual(payload["max_tokens"], 8000)
+
+    def test_output_files_include_original_video_name(self):
+        def transcribe(command, **kwargs):
+            if command[0] == "python":
+                Path(command[3]).write_text("原始转录。", encoding="utf-8-sig")
+            return CompletedProcess(command, 0)
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            video = root / "原视频 名称.第二期.mp4"
+            with (
+                patch("workflow.BASE_DIR", root),
+                patch("workflow.python_with_dependencies", return_value="python"),
+                patch("workflow.ffmpeg_executable", return_value="ffmpeg"),
+                patch("workflow.subprocess.run", side_effect=transcribe),
+                patch("workflow.complete", return_value=("校订稿。", "自由组织的分析。")),
+            ):
+                output = run(video, ())
+
+            expected = {
+                f"{video.stem}_原始转录.txt": "原始转录。",
+                f"{video.stem}_勘误后.txt": "校订稿。",
+                f"{video.stem}_思维分析.md": "自由组织的分析。",
+            }
+            self.assertEqual({file.name for file in output.iterdir()}, set(expected))
+            for name, content in expected.items():
+                self.assertEqual((output / name).read_text(encoding="utf-8-sig").strip(), content)
 
     @patch("workflow.urlopen")
     def test_response_missing_analysis_is_rejected(self, urlopen):
