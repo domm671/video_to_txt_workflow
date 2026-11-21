@@ -6,7 +6,7 @@ from subprocess import CompletedProcess
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from workflow import ANALYSIS_MARKER, CORRECTED_MARKER, api_settings, complete, run
+from workflow import CORRECTED_MARKER, MARKDOWN_MARKER, api_settings, complete, run
 
 
 class WorkflowTests(unittest.TestCase):
@@ -41,17 +41,17 @@ class WorkflowTests(unittest.TestCase):
             settings = api_settings(path)
 
         corrected = "这是校订正文。"
-        analysis = "# 思维结构与思维模型分析\n\n分析正文。"
+        markdown = "## 校订正文\n\n这是校订正文。"
         events = [
             {"choices": [{"delta": {"reasoning_content": "中间推理"}}]},
-            {"choices": [{"delta": {"content": f"{CORRECTED_MARKER}\n{corrected}\n<<<思"}}]},
-            {"choices": [{"delta": {"content": f"维分析>>>\n{analysis}"}}]},
+            {"choices": [{"delta": {"content": f"{CORRECTED_MARKER}\n{corrected}\n{MARKDOWN_MARKER[:-3]}"}}]},
+            {"choices": [{"delta": {"content": f"{MARKDOWN_MARKER[-3:]}\n{markdown}"}}]},
             {"choices": [{"delta": {}, "finish_reason": "stop"}]},
             {"choices": [], "usage": {"completion_tokens": 120}},
         ]
         data = "".join(f"data: {json.dumps(event, ensure_ascii=False)}\n\n" for event in events)
         urlopen.return_value = io.BytesIO((data + "data: [DONE]\n\n").encode("utf-8"))
-        self.assertEqual(complete(settings, "原文"), (corrected, analysis))
+        self.assertEqual(complete(settings, "原文"), (corrected, markdown))
         urlopen.assert_called_once()
         request = urlopen.call_args.args[0]
         self.assertEqual(request.full_url, "https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions")
@@ -86,13 +86,13 @@ class WorkflowTests(unittest.TestCase):
     def test_full_transcript_and_both_outputs_use_one_request(self, urlopen):
         transcript = "这是连续的原始段落。\n" * 600
         corrected = "这是一段校订后的正文。"
-        analysis = "作者围绕实际问题展开思考。\n\n- 先比较，再验证。"
-        content = f"{CORRECTED_MARKER}\r\n{corrected}\r\n{ANALYSIS_MARKER}\r\n{analysis}"
+        markdown = f"## 正文\r\n\r\n{corrected}"
+        content = f"{CORRECTED_MARKER}\r\n{corrected}\r\n{MARKDOWN_MARKER}\r\n{markdown}"
         response = {"choices": [{"finish_reason": "stop", "message": {"content": content}}]}
         urlopen.return_value = io.BytesIO(json.dumps(response).encode("utf-8"))
         settings = ("https://example.com/chat/completions", "test-key", "test-model", {"max_tokens": 8000})
 
-        self.assertEqual(complete(settings, transcript), (corrected, analysis))
+        self.assertEqual(complete(settings, transcript), (corrected, markdown.replace("\r\n", "\n")))
         urlopen.assert_called_once()
         payload = json.loads(urlopen.call_args.args[0].data)
         self.assertEqual(payload["messages"][1]["content"], transcript)
@@ -112,21 +112,21 @@ class WorkflowTests(unittest.TestCase):
                 patch("workflow.python_with_dependencies", return_value="python"),
                 patch("workflow.ffmpeg_executable", return_value="ffmpeg"),
                 patch("workflow.subprocess.run", side_effect=transcribe),
-                patch("workflow.complete", return_value=("校订稿。", "自由组织的分析。")),
+                patch("workflow.complete", return_value=("校订稿。", "## 正文\n\n校订稿。")),
             ):
                 output = run(video, ())
 
             expected = {
                 f"{video.stem}_原始转录.txt": "原始转录。",
                 f"{video.stem}_勘误后.txt": "校订稿。",
-                f"{video.stem}_思维分析.md": "自由组织的分析。",
+                f"{video.stem}_勘误后.md": "## 正文\n\n校订稿。",
             }
             self.assertEqual({file.name for file in output.iterdir()}, set(expected))
             for name, content in expected.items():
                 self.assertEqual((output / name).read_text(encoding="utf-8-sig").strip(), content)
 
     @patch("workflow.urlopen")
-    def test_response_missing_analysis_is_rejected(self, urlopen):
+    def test_response_missing_markdown_is_rejected(self, urlopen):
         content = f"{CORRECTED_MARKER}\n校订后的正文。"
         response = {"choices": [{"finish_reason": "stop", "message": {"content": content}}]}
         urlopen.return_value = io.BytesIO(json.dumps(response).encode("utf-8"))
